@@ -1,17 +1,27 @@
 use midenid_contracts::common::{
-    create_basic_account, create_library, create_public_immutable_contract, create_public_note_with_library,
-    create_tx_script, delete_keystore_and_store, instantiate_client, wait_for_note,
+    create_basic_account, create_library, create_public_immutable_contract,
+    create_public_note_with_library, create_tx_script, delete_keystore_and_store,
+    instantiate_client, wait_for_note,
 };
 
 use miden_client::{
-    ClientError, Word,
-    account::{AccountIdAddress, Address, AddressInterface},
+    ClientError, Felt, Word,
+    account::AddressInterface,
+    account::{
+        AccountBuilder, AccountIdAddress, AccountStorageMode, AccountType, Address, StorageSlot,
+    },
     keystore::FilesystemKeyStore,
     note::NoteAssets,
     rpc::Endpoint,
     transaction::TransactionRequestBuilder,
 };
-use miden_objects::account::NetworkId;
+use miden_lib::account::auth::{self};
+use miden_lib::transaction::TransactionKernel;
+use miden_objects::{
+    account::{AccountComponent, NetworkId},
+    assembly::Assembler,
+};
+use rand::RngCore;
 use std::{fs, path::Path};
 use tokio::time::{Duration, sleep};
 
@@ -50,10 +60,31 @@ async fn init_registry_with_note() -> Result<(), ClientError> {
     // -------------------------------------------------------------------------
     let counter_code = fs::read_to_string(Path::new("./masm/accounts/miden_id.masm")).unwrap();
 
-    let (counter_contract, counter_seed) =
-        create_public_immutable_contract(&mut client, &counter_code)
-            .await
-            .unwrap();
+    let assembler: Assembler = TransactionKernel::assembler().with_debug_mode(true);
+
+    let counter_component = AccountComponent::compile(
+        counter_code.clone(),
+        assembler.clone(),
+        vec![StorageSlot::Value(Word::new([
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+            Felt::new(0),
+        ]))],
+    )
+    .unwrap()
+    .with_supports_all_types();
+
+    let mut init_seed = [0_u8; 32];
+    client.rng().fill_bytes(&mut init_seed);
+    let (counter_contract, counter_seed) = AccountBuilder::new(init_seed)
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_auth_component(auth::NoAuth)
+        .with_component(counter_component.clone())
+        .build()
+        .unwrap();
+
     let counter_contract_address =
         AccountIdAddress::new(counter_contract.id(), AddressInterface::Unspecified);
 
@@ -80,12 +111,18 @@ async fn init_registry_with_note() -> Result<(), ClientError> {
 
     let note_assets = NoteAssets::new(vec![]).unwrap();
 
-    let increment_note = create_public_note_with_library(&mut client, note_code, alice_account.clone(), note_assets, library)
-        .await
-        .unwrap();
+    let increment_note = create_public_note_with_library(
+        &mut client,
+        note_code,
+        alice_account.clone(),
+        note_assets,
+        library,
+    )
+    .await
+    .unwrap();
 
     println!("Init note created, waiting for onchain commitment");
-    
+
     // Give time for transaction to be processed before looking for the note
     // This prevents the wait_for_note function from getting stuck
     sleep(Duration::from_secs(3)).await;
@@ -93,16 +130,12 @@ async fn init_registry_with_note() -> Result<(), ClientError> {
     // -------------------------------------------------------------------------
     // STEP 4: Consume the Note
     // -------------------------------------------------------------------------
-    wait_for_note(&mut client, Some(alice_account.clone()), &increment_note)
-        .await
-        .unwrap();
-
-    let script_code = fs::read_to_string(Path::new("./masm/scripts/nop.masm")).unwrap();
-    let tx_script = create_tx_script(script_code, None).unwrap();
+    // wait_for_note(&mut client, Some(counter_contract.clone()), &increment_note)
+    //     .await
+    //     .unwrap();
 
     let consume_custom_req = TransactionRequestBuilder::new()
-        .authenticated_input_notes([(increment_note.id(), None)])
-        .custom_script(tx_script)
+        .unauthenticated_input_notes([(increment_note.clone(), None)])
         .build()
         .unwrap();
 
@@ -110,7 +143,7 @@ async fn init_registry_with_note() -> Result<(), ClientError> {
         .new_transaction(counter_contract.id(), consume_custom_req)
         .await
         .unwrap();
-    
+
     let submission_result = client.submit_transaction(tx_result).await;
     if let Err(e) = submission_result {
         eprintln!("Failed to submit consumption transaction: {}", e);
