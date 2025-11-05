@@ -1,11 +1,34 @@
+use crate::{
+    notes::{
+        create_naming_initialize_note, create_naming_set_payment_token_contract,
+        create_naming_set_pricing_root, create_naming_transfer_owner_note,
+        create_pricing_initialize_note,
+    },
+    utils::{
+        get_naming_account_code, get_price_set_notes, get_pricing_account_code, naming_storage,
+        pricing_storage,
+    },
+};
 use miden_client::{
-    account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType}, auth::AuthSecretKey, builder::ClientBuilder, crypto::SecretKey, keystore::FilesystemKeyStore, rpc::{Endpoint, TonicRpcClient}, store::TransactionFilter, transaction::{OutputNote, TransactionId, TransactionRequestBuilder, TransactionStatus}, Client, ClientError, DebugMode};
+    Client, ClientError, DebugMode,
+    account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
+    auth::AuthSecretKey,
+    builder::ClientBuilder,
+    crypto::SecretKey,
+    keystore::FilesystemKeyStore,
+    rpc::{Endpoint, TonicRpcClient},
+    store::TransactionFilter,
+    transaction::{OutputNote, TransactionId, TransactionRequestBuilder, TransactionStatus},
+};
 use miden_crypto::{Felt, Word};
-use miden_lib::{account::auth::{self, AuthRpoFalcon512}, account::wallets::BasicWallet, transaction::TransactionKernel};
+use miden_lib::{
+    account::auth::{self, AuthRpoFalcon512},
+    account::wallets::BasicWallet,
+    transaction::TransactionKernel,
+};
 use miden_objects::account::AccountComponent;
 use rand::{RngCore, rngs::StdRng};
 use std::{sync::Arc, time::Duration};
-use crate::{notes::{create_naming_initialize_note, create_naming_set_payment_token_contract, create_naming_set_pricing_root, create_naming_transfer_owner_note, create_pricing_initialize_note}, utils::{get_naming_account_code, get_price_set_notes, get_pricing_account_code, naming_storage, pricing_storage}};
 use tokio::time::sleep;
 type ClientType = Client<FilesystemKeyStore<rand::prelude::StdRng>>;
 
@@ -53,7 +76,7 @@ pub async fn instantiate_client(endpoint: Endpoint) -> Result<ClientType, Client
 
 pub async fn create_deployer_account(
     client: &mut Client<FilesystemKeyStore<StdRng>>,
-     keystore: FilesystemKeyStore<StdRng>
+    keystore: FilesystemKeyStore<StdRng>,
 ) -> Result<(miden_client::account::Account, SecretKey), ClientError> {
     let mut init_seed = [0_u8; 32];
     client.rng().fill_bytes(&mut init_seed);
@@ -73,15 +96,19 @@ pub async fn create_deployer_account(
     Ok((account, key_pair))
 }
 
-pub async fn create_network_naming_account(client: &mut Client<FilesystemKeyStore<StdRng>>) -> (Account, Word) {
+pub async fn create_network_naming_account(
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
+) -> (Account, Word) {
     let storage_slots = naming_storage();
     let account_code = get_naming_account_code();
 
     let account_component = AccountComponent::compile(
-        account_code.clone(), 
-        TransactionKernel::assembler().with_debug_mode(true), 
-        storage_slots
-    ).unwrap().with_supports_all_types();
+        account_code.clone(),
+        TransactionKernel::assembler().with_debug_mode(true),
+        storage_slots,
+    )
+    .unwrap()
+    .with_supports_all_types();
 
     let mut seed = [0_u8; 32];
     client.rng().fill_bytes(&mut seed);
@@ -96,7 +123,9 @@ pub async fn create_network_naming_account(client: &mut Client<FilesystemKeyStor
     return (account, word);
 }
 
-pub async fn create_network_pricing_account(client: &mut Client<FilesystemKeyStore<StdRng>>) -> (Account, Word) {
+pub async fn create_network_pricing_account(
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
+) -> (Account, Word) {
     let storage_slots = pricing_storage();
     let account_code = get_pricing_account_code();
 
@@ -104,10 +133,12 @@ pub async fn create_network_pricing_account(client: &mut Client<FilesystemKeySto
     client.rng().fill_bytes(&mut seed);
 
     let account_component = AccountComponent::compile(
-        account_code.clone(), 
-        TransactionKernel::assembler().with_debug_mode(true), 
-        storage_slots
-    ).unwrap().with_supports_all_types();
+        account_code.clone(),
+        TransactionKernel::assembler().with_debug_mode(true),
+        storage_slots,
+    )
+    .unwrap()
+    .with_supports_all_types();
 
     let (account, word) = AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountImmutableCode)
@@ -119,29 +150,48 @@ pub async fn create_network_pricing_account(client: &mut Client<FilesystemKeySto
     return (account, word);
 }
 
-pub async fn initialize_pricing_contract(client: &mut Client<FilesystemKeyStore<StdRng>>, initializer_account: AccountId, token: AccountId, setter: AccountId, contract: Account) -> anyhow::Result<()> {
-    let initialize_note = create_pricing_initialize_note(initializer_account, token, setter, contract.clone()).await?;
+pub async fn initialize_pricing_contract(
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
+    initializer_account: AccountId,
+    token: AccountId,
+    setter: AccountId,
+    contract: Account,
+) -> anyhow::Result<()> {
+    let initialize_note =
+        create_pricing_initialize_note(initializer_account, token, setter, contract.clone())
+            .await?;
 
     //let tx_request = TransactionRequestBuilder::new().own_output_notes(vec![OutputNote::Full(initialize_note.clone())]).build()?;
     let tx_request = TransactionRequestBuilder::new()
-    
         .own_output_notes(vec![OutputNote::Full(initialize_note)])
         .build()?;
-    
-    let tx_result = client.new_transaction(initializer_account, tx_request).await?;
+
+    let tx_result = client
+        .new_transaction(initializer_account, tx_request)
+        .await?;
 
     let _ = client.submit_transaction(tx_result).await?;
     client.sync_state().await?;
     Ok(())
 }
 
-pub async fn initialize_naming_contract(client: &mut Client<FilesystemKeyStore<StdRng>>,initializer_account: AccountId, owner: AccountId, treasury: AccountId, contract: Account) -> anyhow::Result<()> {
-    let initialize_note = create_naming_initialize_note(initializer_account, owner, treasury, contract.clone()).await?;
+pub async fn initialize_naming_contract(
+    client: &mut Client<FilesystemKeyStore<StdRng>>,
+    initializer_account: AccountId,
+    owner: AccountId,
+    treasury: AccountId,
+    contract: Account,
+) -> anyhow::Result<()> {
+    let initialize_note =
+        create_naming_initialize_note(initializer_account, owner, treasury, contract.clone())
+            .await?;
 
     let tx_request = TransactionRequestBuilder::new()
         .own_output_notes(vec![OutputNote::Full(initialize_note)])
         .build()?;
-    let tx_result = client.new_transaction(initializer_account, tx_request).await?;
+    let tx_result = client
+        .new_transaction(initializer_account, tx_request)
+        .await?;
     let _ = client.submit_transaction(tx_result).await?;
     client.sync_state().await?;
     Ok(())
@@ -181,31 +231,55 @@ async fn wait_for_tx(
 pub async fn initialize_all(
     client: &mut Client<FilesystemKeyStore<StdRng>>,
     initializer_account: AccountId, // tx_sender_1
-    updated_account: AccountId, // tx_sender_2
-    owner: AccountId, 
-    treasury: AccountId, 
-    token: AccountId, 
-    _setter: AccountId, 
-    naming_contract: Account, 
+    updated_account: AccountId,     // tx_sender_2
+    owner: AccountId,
+    treasury: AccountId,
+    token: AccountId,
+    _setter: AccountId,
+    naming_contract: Account,
     pricing_contract: Account,
-    prices: Vec<Felt>
+    prices: Vec<Felt>,
 ) -> anyhow::Result<()> {
-    let init_naming_note = create_naming_initialize_note(initializer_account, initializer_account, treasury, naming_contract.clone()).await?;
+    let init_naming_note = create_naming_initialize_note(
+        initializer_account,
+        initializer_account,
+        treasury,
+        naming_contract.clone(),
+    )
+    .await?;
     // Initially set setter as initializer_account
-    let init_pricing_note = create_pricing_initialize_note(initializer_account, token, initializer_account, pricing_contract.clone()).await?;
+    let init_pricing_note = create_pricing_initialize_note(
+        initializer_account,
+        token,
+        initializer_account,
+        pricing_contract.clone(),
+    )
+    .await?;
 
     // price set notes
-    let set_price_notes = get_price_set_notes(initializer_account, pricing_contract.id(), prices).await;
+    let set_price_notes =
+        get_price_set_notes(initializer_account, pricing_contract.id(), prices).await;
 
     // naming set payment token note
-    let set_payment_token = create_naming_set_payment_token_contract(initializer_account, token, pricing_contract.id(), naming_contract.id()).await?;
+    let set_payment_token = create_naming_set_payment_token_contract(
+        initializer_account,
+        token,
+        pricing_contract.id(),
+        naming_contract.id(),
+    )
+    .await?;
 
     // naming transfer ownership
-    let transfer_ownership = create_naming_transfer_owner_note(initializer_account, updated_account, naming_contract.id()).await?;
+    let transfer_ownership = create_naming_transfer_owner_note(
+        initializer_account,
+        updated_account,
+        naming_contract.id(),
+    )
+    .await?;
 
     let tx_request = TransactionRequestBuilder::new()
         .own_output_notes(vec![
-            OutputNote::Full(init_naming_note.clone()), 
+            OutputNote::Full(init_naming_note.clone()),
             OutputNote::Full(init_pricing_note.clone()),
             OutputNote::Full(set_price_notes[0].clone()),
             OutputNote::Full(set_price_notes[1].clone()),
@@ -216,66 +290,100 @@ pub async fn initialize_all(
             OutputNote::Full(transfer_ownership.clone()),
         ])
         .build()?;
-    let tx_result = client.new_transaction(initializer_account, tx_request).await?;
+    let tx_result = client
+        .new_transaction(initializer_account, tx_request)
+        .await?;
     let _ = client.submit_transaction(tx_result.clone()).await?;
     client.sync_state().await?;
     println!("Submitted notes");
 
     // Consume notes
 
-
     let consume_naming_notes_request = TransactionRequestBuilder::new()
-            .unauthenticated_input_notes([
-                    (init_naming_note, None), 
-                    (set_payment_token, None),
-                    (transfer_ownership, None),
-                ])
-            .build()
-            .unwrap();
-    
+        .unauthenticated_input_notes([
+            (init_naming_note, None),
+            (set_payment_token, None),
+            (transfer_ownership, None),
+        ])
+        .build()
+        .unwrap();
 
     let consume_naming_notes_tx_result = client
         .new_transaction(naming_contract.id(), consume_naming_notes_request)
         .await
         .unwrap();
 
-    let _ = client.submit_transaction(consume_naming_notes_tx_result.clone()).await;
+    let _ = client
+        .submit_transaction(consume_naming_notes_tx_result.clone())
+        .await;
     sleep(Duration::from_secs(2)).await;
     client.sync_state().await?;
 
     let naming_notes_consume_tx_id = consume_naming_notes_tx_result.executed_transaction().id();
 
-    wait_for_tx(client, naming_notes_consume_tx_id).await.unwrap();
+    wait_for_tx(client, naming_notes_consume_tx_id)
+        .await
+        .unwrap();
     sleep(Duration::from_secs(2)).await;
     client.sync_state().await?;
 
     println!("Naming notes consumed.");
 
+    // print all note commitments
+    println!(
+        "Init pricing commitment: {:?}",
+        init_pricing_note.commitment().to_hex()
+    );
+    println!(
+        "Set price note 1 commitment: {:?}",
+        set_price_notes[0].commitment().to_hex()
+    );
+    println!(
+        "Set price note 2 commitment: {:?}",
+        set_price_notes[1].commitment().to_hex()
+    );
+    println!(
+        "Set price note 3 commitment: {:?}",
+        set_price_notes[2].commitment().to_hex()
+    );
+    println!(
+        "Set price note 4 commitment: {:?}",
+        set_price_notes[3].commitment().to_hex()
+    );
+    println!(
+        "Set price note 5 commitment: {:?}",
+        set_price_notes[4].commitment().to_hex()
+    );
+
     let consume_pricing_notes_request = TransactionRequestBuilder::new()
         .unauthenticated_input_notes([
-                (init_pricing_note, None),
-                (set_price_notes[0].clone(), None),
-                (set_price_notes[1].clone(), None),
-                (set_price_notes[2].clone(), None),
-                (set_price_notes[3].clone(), None),
-                (set_price_notes[4].clone(), None),
-            ])
+            (init_pricing_note, None),
+            (set_price_notes[0].clone(), None),
+            (set_price_notes[1].clone(), None),
+            (set_price_notes[2].clone(), None),
+            (set_price_notes[3].clone(), None),
+            (set_price_notes[4].clone(), None),
+        ])
         .build()
         .unwrap();
-    
+
     let consume_pricing_notes_tx_result = client
         .new_transaction(pricing_contract.id(), consume_pricing_notes_request)
         .await
         .unwrap();
-    
-    let _ = client.submit_transaction(consume_pricing_notes_tx_result.clone()).await;
+
+    let _ = client
+        .submit_transaction(consume_pricing_notes_tx_result.clone())
+        .await;
+    println!("!!! Submitted pricing notes");
     sleep(Duration::from_secs(2)).await;
     client.sync_state().await?;
-    
-    
+
     let pricing_notes_consume_tx_id = consume_pricing_notes_tx_result.executed_transaction().id();
 
-    wait_for_tx(client, pricing_notes_consume_tx_id).await.unwrap();
+    wait_for_tx(client, pricing_notes_consume_tx_id)
+        .await
+        .unwrap();
     sleep(Duration::from_secs(2)).await;
     client.sync_state().await?;
 
@@ -287,22 +395,50 @@ pub async fn initialize_all(
     let naming_account = client.get_account(naming_contract.id()).await?;
     let naming_account_data = naming_account.unwrap().account().clone();
 
-    assert_eq!(pricing_account_data.storage().get_item(0).unwrap().get(0).unwrap().as_int(), 1);
-    assert_eq!(naming_account_data.storage().get_item(0).unwrap().get(0).unwrap().as_int(), 1);
+    assert_eq!(
+        pricing_account_data
+            .storage()
+            .get_item(0)
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .as_int(),
+        1
+    );
+    assert_eq!(
+        naming_account_data
+            .storage()
+            .get_item(0)
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .as_int(),
+        1
+    );
 
-    println!("Naming current owner: {:?}", naming_account_data.storage().get_item(1));
+    println!(
+        "Naming current owner: {:?}",
+        naming_account_data.storage().get_item(1)
+    );
 
     // Now we should update procedure root
-    
+
     let pricing_root = pricing_account_data.storage().get_item(4).unwrap();
-    
-    let naming_root_set_note = create_naming_set_pricing_root(updated_account, pricing_root, pricing_contract.id(), naming_contract.id()).await?;
-        
-    let transfer_ownership = create_naming_transfer_owner_note(updated_account, owner, naming_contract.id()).await?;
+
+    let naming_root_set_note = create_naming_set_pricing_root(
+        updated_account,
+        pricing_root,
+        pricing_contract.id(),
+        naming_contract.id(),
+    )
+    .await?;
+
+    let transfer_ownership =
+        create_naming_transfer_owner_note(updated_account, owner, naming_contract.id()).await?;
 
     let tx_request = TransactionRequestBuilder::new()
         .own_output_notes(vec![
-            OutputNote::Full(naming_root_set_note.clone()), 
+            OutputNote::Full(naming_root_set_note.clone()),
             OutputNote::Full(transfer_ownership.clone()),
         ])
         .build()?;
@@ -312,10 +448,7 @@ pub async fn initialize_all(
     println!("Submitted update notes");
 
     let consume_naming_notes_request = TransactionRequestBuilder::new()
-        .unauthenticated_input_notes([
-                (naming_root_set_note, None), 
-                (transfer_ownership, None),
-            ])
+        .unauthenticated_input_notes([(naming_root_set_note, None), (transfer_ownership, None)])
         .build()
         .unwrap();
 
@@ -324,7 +457,9 @@ pub async fn initialize_all(
         .await
         .unwrap();
 
-    let _ = client.submit_transaction(consume_naming_notes_tx_result.clone()).await;
+    let _ = client
+        .submit_transaction(consume_naming_notes_tx_result.clone())
+        .await;
     client.sync_state().await?;
 
     let update_notes_tx_id = consume_naming_notes_tx_result.executed_transaction().id();
@@ -332,7 +467,7 @@ pub async fn initialize_all(
     wait_for_tx(client, update_notes_tx_id).await.unwrap();
     sleep(Duration::from_secs(2)).await;
     client.sync_state().await?;
-    
+
     println!("Everything is done. Now ensuring contract states are correct.");
 
     let pricing_account = client.get_account(pricing_contract.id()).await?;
@@ -341,20 +476,107 @@ pub async fn initialize_all(
     let naming_account = client.get_account(naming_contract.id()).await?;
     let naming_account_data = naming_account.unwrap().account().clone();
 
-    println!("Naming owner: {:?}", naming_account_data.storage().get_item(1).unwrap());
-    println!("Naming treasury: {:?}", naming_account_data.storage().get_item(2).unwrap());
-    println!("Naming token to pricing: {:?}", naming_account_data.storage().get_map_item(3, Word::new([Felt::new(token.suffix().as_int()),token.prefix().as_felt(), Felt::new(0), Felt::new(0) ])).unwrap());
-    println!("Naming pricing root: {:?}", naming_account_data.storage().get_map_item(7, Word::new([Felt::new(pricing_contract.id().suffix().as_int()),pricing_contract.id().prefix().as_felt(), Felt::new(0), Felt::new(0) ])).unwrap());
-    
-    println!("Pricing setter: {:?}", pricing_account_data.storage().get_item(1).unwrap());
-    println!("Pricing token: {:?}", pricing_account_data.storage().get_item(2).unwrap());
-    println!("Pricing Letter(1) price: {:?}", pricing_account_data.storage().get_map_item(3, Word::new([Felt::new(1),Felt::new(0),Felt::new(0),Felt::new(0)])).unwrap());
-    println!("Pricing Letter(2) price: {:?}", pricing_account_data.storage().get_map_item(3, Word::new([Felt::new(2),Felt::new(0),Felt::new(0),Felt::new(0)])).unwrap());
-    println!("Pricing Letter(3) price: {:?}", pricing_account_data.storage().get_map_item(3, Word::new([Felt::new(3),Felt::new(0),Felt::new(0),Felt::new(0)])).unwrap());
-    println!("Pricing Letter(4) price: {:?}", pricing_account_data.storage().get_map_item(3, Word::new([Felt::new(4),Felt::new(0),Felt::new(0),Felt::new(0)])).unwrap());
-    println!("Pricing Letter(5) price: {:?}", pricing_account_data.storage().get_map_item(3, Word::new([Felt::new(5),Felt::new(0),Felt::new(0),Felt::new(0)])).unwrap());
-    println!("Pricing calculate root: {:?}", pricing_account_data.storage().get_item(4).unwrap());
+    println!(
+        "Naming owner: {:?}",
+        naming_account_data.storage().get_item(1).unwrap()
+    );
+    println!(
+        "Naming treasury: {:?}",
+        naming_account_data.storage().get_item(2).unwrap()
+    );
+    println!(
+        "Naming token to pricing: {:?}",
+        naming_account_data
+            .storage()
+            .get_map_item(
+                3,
+                Word::new([
+                    Felt::new(token.suffix().as_int()),
+                    token.prefix().as_felt(),
+                    Felt::new(0),
+                    Felt::new(0)
+                ])
+            )
+            .unwrap()
+    );
+    println!(
+        "Naming pricing root: {:?}",
+        naming_account_data
+            .storage()
+            .get_map_item(
+                7,
+                Word::new([
+                    Felt::new(pricing_contract.id().suffix().as_int()),
+                    pricing_contract.id().prefix().as_felt(),
+                    Felt::new(0),
+                    Felt::new(0)
+                ])
+            )
+            .unwrap()
+    );
 
+    println!(
+        "Pricing setter: {:?}",
+        pricing_account_data.storage().get_item(1).unwrap()
+    );
+    println!(
+        "Pricing token: {:?}",
+        pricing_account_data.storage().get_item(2).unwrap()
+    );
+    println!(
+        "Pricing Letter(1) price: {:?}",
+        pricing_account_data
+            .storage()
+            .get_map_item(
+                3,
+                Word::new([Felt::new(1), Felt::new(0), Felt::new(0), Felt::new(0)])
+            )
+            .unwrap()
+    );
+    println!(
+        "Pricing Letter(2) price: {:?}",
+        pricing_account_data
+            .storage()
+            .get_map_item(
+                3,
+                Word::new([Felt::new(2), Felt::new(0), Felt::new(0), Felt::new(0)])
+            )
+            .unwrap()
+    );
+    println!(
+        "Pricing Letter(3) price: {:?}",
+        pricing_account_data
+            .storage()
+            .get_map_item(
+                3,
+                Word::new([Felt::new(3), Felt::new(0), Felt::new(0), Felt::new(0)])
+            )
+            .unwrap()
+    );
+    println!(
+        "Pricing Letter(4) price: {:?}",
+        pricing_account_data
+            .storage()
+            .get_map_item(
+                3,
+                Word::new([Felt::new(4), Felt::new(0), Felt::new(0), Felt::new(0)])
+            )
+            .unwrap()
+    );
+    println!(
+        "Pricing Letter(5) price: {:?}",
+        pricing_account_data
+            .storage()
+            .get_map_item(
+                3,
+                Word::new([Felt::new(5), Felt::new(0), Felt::new(0), Felt::new(0)])
+            )
+            .unwrap()
+    );
+    println!(
+        "Pricing calculate root: {:?}",
+        pricing_account_data.storage().get_item(4).unwrap()
+    );
 
     Ok(())
 }
