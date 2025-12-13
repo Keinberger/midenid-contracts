@@ -19,7 +19,7 @@ pub async fn create_note_for_naming(
     name: String,
     inputs: NoteInputs,
     sender: AccountId,
-    target_id: AccountId,
+    _target_id: AccountId,
     assets: NoteAssets,
 ) -> anyhow::Result<Note> {
     let note_code = fs::read_to_string(Path::new(&format!("./masm/notes/{}.masm", name)))?;

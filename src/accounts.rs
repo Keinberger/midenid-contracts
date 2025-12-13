@@ -61,7 +61,7 @@ pub async fn create_naming_account(
 
     let account = AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountImmutableCode)
-        .storage_mode(AccountStorageMode::Network)
+        .storage_mode(AccountStorageMode::Public)
         .with_component(account_component.clone())
         .with_auth_component(NoAuth)
         .build()?;

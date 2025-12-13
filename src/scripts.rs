@@ -1,4 +1,5 @@
 use miden_client::{
+    ScriptBuilder,
     account::AccountId,
     note::{NoteAssets, NoteInputs},
     transaction::{OutputNote, TransactionRequestBuilder},
@@ -15,12 +16,23 @@ use crate::{
 
 pub async fn deploy() -> anyhow::Result<()> {
     println!("Starting Miden Name Registry deployment...");
+    println!("=================================================");
+    println!("Deleting existing store & keystore (store.sqlite3)");
+    let _ = std::fs::remove_file("store.sqlite3");
+    let _ = std::fs::remove_dir("keystore");
+    println!("Deletion complete.");
+    println!("=================================================");
+
     let mut keystore = create_keystore()?;
     let mut client = initiate_client(keystore.clone()).await?;
 
     let deployer_account = create_deployer_account(&mut client, &mut keystore).await?;
     let naming_account = create_naming_account(&mut client).await?;
     client.sync_state().await?;
+
+    println!("=================================================");
+
+    println!("Init note creation started");
 
     let initialize_inputs = NoteInputs::new(
         [
@@ -45,12 +57,14 @@ pub async fn deploy() -> anyhow::Result<()> {
     .await?;
 
     let init_req = TransactionRequestBuilder::new()
-        .own_output_notes(vec![OutputNote::Full(init_note)])
+        .own_output_notes(vec![OutputNote::Full(init_note.clone())])
         .build()?;
 
     let init_tx_id = client
         .submit_new_transaction(deployer_account.id(), init_req)
         .await?;
+
+    println!("Submitted initialization note transaction.");
 
     println!(
         "View transaction on MidenScan: https://testnet.midenscan.com/tx/{:?}",
@@ -66,7 +80,36 @@ pub async fn deploy() -> anyhow::Result<()> {
 
     client.sync_state().await?;
 
+    println!("=================================================");
+
+    // Consume notes explicitly (required for NoAuth accounts)
+    println!("Consuming initialization notes...");
+
+    let nop_script_code = std::fs::read_to_string(std::path::Path::new("./masm/scripts/nop.masm"))?;
+    let transaction_script = ScriptBuilder::new(false).compile_tx_script(nop_script_code)?;
+
+    let consume_request = TransactionRequestBuilder::new()
+        .authenticated_input_notes(vec![(init_note.id(), None)])
+        .custom_script(transaction_script)
+        .build()?;
+
+    let consume_tx_id = client
+        .submit_new_transaction(naming_account.id(), consume_request)
+        .await?;
+    println!(
+        "Consuming initialization notes via transaction: {:?}",
+        consume_tx_id
+    );
+
+    wait_for_tx(&mut client, consume_tx_id).await?;
+
+    println!("✅ Initialization Notes consumed successfully!");
+
+    println!("=================================================");
+
     println!("Setting prices");
+
+    println!("Set price note creation started");
 
     let payment_token_id = AccountId::from_hex("0x54bf4e12ef20082070758b022456c7")?;
 
@@ -88,12 +131,14 @@ pub async fn deploy() -> anyhow::Result<()> {
     .await?;
 
     let set_price_req = TransactionRequestBuilder::new()
-        .own_output_notes(vec![OutputNote::Full(set_prices_note)])
+        .own_output_notes(vec![OutputNote::Full(set_prices_note.clone())])
         .build()?;
 
     let set_prices_tx_id = client
         .submit_new_transaction(deployer_account.id(), set_price_req)
         .await?;
+
+    println!("Submitted set price note transaction.");
 
     println!(
         "View transaction on MidenScan: https://testnet.midenscan.com/tx/{:?}",
@@ -103,46 +148,41 @@ pub async fn deploy() -> anyhow::Result<()> {
 
     println!("set prices tx submitted, waiting for onchain commitment");
 
+    println!("=================================================");
+
     wait_for_tx(&mut client, set_prices_tx_id).await?;
 
     sleep(Duration::from_secs(6)).await;
 
     client.sync_state().await?;
 
-    // Consume notes explicitly (required for NoAuth accounts)
-    println!("Consuming initialization notes...");
-    let consumable_notes = client
-        .get_consumable_notes(Some(naming_account.id()))
+    sleep(Duration::from_secs(6)).await;
+
+    println!("Consuming pricing notes...");
+
+    let nop_script_code = std::fs::read_to_string(std::path::Path::new("./masm/scripts/nop.masm"))?;
+    let transaction_script = ScriptBuilder::new(false).compile_tx_script(nop_script_code)?;
+
+    let consume_request = TransactionRequestBuilder::new()
+        .authenticated_input_notes(vec![(set_prices_note.id(), None)])
+        .custom_script(transaction_script)
+        .build()?;
+
+    let consume_tx_id = client
+        .submit_new_transaction(naming_account.id(), consume_request)
         .await?;
+    println!(
+        "Consuming pricing notes via transaction: {:?}",
+        consume_tx_id
+    );
 
-    if !consumable_notes.is_empty() {
-        println!("Found {} consumable note(s)", consumable_notes.len());
+    wait_for_tx(&mut client, consume_tx_id).await?;
 
-        let note_ids: Vec<_> = consumable_notes
-            .iter()
-            .map(|(record, _)| (record.id(), None))
-            .collect();
+    println!("✅ Notes pricing successfully!");
 
-        let nop_script_code =
-            std::fs::read_to_string(std::path::Path::new("./masm/scripts/nop.masm"))?;
-        use miden_client::ScriptBuilder;
-        let transaction_script = ScriptBuilder::new(false).compile_tx_script(nop_script_code)?;
+    println!("=================================================");
 
-        let consume_request = TransactionRequestBuilder::new()
-            .authenticated_input_notes(note_ids)
-            .custom_script(transaction_script)
-            .build()?;
-
-        let consume_tx_id = client
-            .submit_new_transaction(naming_account.id(), consume_request)
-            .await?;
-        println!("Consuming notes via transaction: {:?}", consume_tx_id);
-
-        wait_for_tx(&mut client, consume_tx_id).await?;
-        println!("✅ Notes consumed successfully!");
-    } else {
-        println!("Warning: No consumable notes found");
-    }
+    println!("✅ Miden Name Registry deployed successfully! ✅");
 
     Ok(())
 }
