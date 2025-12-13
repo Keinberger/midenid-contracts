@@ -132,10 +132,6 @@ pub async fn init_naming() -> anyhow::Result<TestingContext> {
         Felt::new(owner_account.id().prefix().into()),
         Felt::new(0),
         Felt::new(0),
-        Felt::new(one_year_time.into()),
-        Felt::new(0),
-        Felt::new(0),
-        Felt::new(0),
     ].to_vec())?;
     let init_note = create_note_for_naming("initialize_naming".to_string(), initialize_inputs, owner_account.id(), naming_account.id(), NoteAssets::new(vec![]).unwrap()).await?;
     

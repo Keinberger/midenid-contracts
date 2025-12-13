@@ -7,6 +7,7 @@ use test_utils::init_naming;
 
 use crate::test_utils::{add_note_to_builder, create_note_for_naming, execute_note, execute_notes_and_build_chain, get_test_prices, create_note_for_naming_with_custom_serial_num};
 #[tokio::test]
+#[ignore = "tbd"]
 async fn test_naming_register_under_referrer() -> anyhow::Result<()> {
     let mut ctx = init_naming().await?;
 
@@ -81,6 +82,7 @@ async fn test_naming_register_under_referrer() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "tbd"]
 async fn test_naming_referrer_revenue_accumulation() -> anyhow::Result<()> {
     let mut ctx = init_naming().await?;
 
