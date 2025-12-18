@@ -46,6 +46,37 @@ pub async fn create_note_for_naming(
     Ok(note)
 }
 
+pub async fn create_pricing_network_note_for_naming(
+    serial_number: Word,
+    name: String,
+    inputs: NoteInputs,
+    sender: AccountId,
+    _target_id: AccountId,
+    assets: NoteAssets,
+) -> anyhow::Result<Note> {
+    let note_code = fs::read_to_string(Path::new(&format!("./masm/notes/{}.masm", name)))?;
+    let naming_code = fs::read_to_string(Path::new("./masm/accounts/naming.masm")).unwrap();
+    let library = create_library(naming_code, "miden_name::naming")?;
+
+    let note_script = ScriptBuilder::new(true)
+        .with_dynamically_linked_library(&library)
+        .unwrap()
+        .compile_note_script(note_code)
+        .unwrap();
+
+    let recipient = NoteRecipient::new(serial_number, note_script, inputs.clone());
+    let tag = NoteTag::from_account_id(_target_id);
+    let metadata = NoteMetadata::new(
+        sender,
+        NoteType::Public,
+        tag,
+        NoteExecutionHint::always(),
+        Felt::new(0),
+    )?;
+    let note = Note::new(assets, metadata, recipient);
+    Ok(note)
+}
+
 pub fn create_library(account_code: String, library_path: &str) -> anyhow::Result<Library> {
     let assembler = TransactionKernel::assembler().with_debug_mode(true);
     let source_manager = Arc::new(DefaultSourceManager::default());

@@ -61,13 +61,13 @@ pub async fn create_naming_account(
 
     let account = AccountBuilder::new(seed)
         .account_type(AccountType::RegularAccountImmutableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .storage_mode(AccountStorageMode::Network)
         .with_component(account_component.clone())
         .with_auth_component(NoAuth)
         .build()?;
 
     client.add_account(&account, false).await?;
 
-    println!("Naming account ID: {:?}", account.id().to_string());
+    println!("Naming account ID: {:?}", account.id().to_hex());
     Ok(account)
 }
